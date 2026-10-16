@@ -1,0 +1,598 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "API Mascotas JWT",
+        "version": "1.0.0",
+        "description": "API REST de mascotas con MongoDB y autenticación JWT. Para probar endpoints protegidos: ejecuta POST /api/login, copia el accessToken y pulsa Authorize para introducirlo como Bearer token."
+    },
+    "servers": [
+        {
+            "url": "http://localhost:5000",
+            "description": "Servidor local"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Auth",
+            "description": "Autenticación y gestión de sesión"
+        },
+        {
+            "name": "Mascotas",
+            "description": "Operaciones de gestión de mascotas"
+        }
+    ],
+    "paths": {
+        "/api/login": {
+            "post": {
+                "tags": ["Auth"],
+                "summary": "Iniciar sesión",
+                "description": "Comprueba las credenciales y devuelve un token de acceso y un refresh token.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            },
+                            "example": {
+                                "nombre": "ana",
+                                "contraseña": "ejemplo123"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Autenticación correcta.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Tokens"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "El cuerpo no es JSON o faltan nombre/contraseña.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Credenciales incorrectas.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Demasiados intentos de inicio de sesión.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/refresh": {
+            "post": {
+                "tags": ["Auth"],
+                "summary": "Renovar los tokens",
+                "description": "Valida el refresh token guardado, lo rota y devuelve un nuevo par de tokens.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RefreshRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tokens renovados correctamente.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Tokens"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No se ha proporcionado un refresh token.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Refresh token no válido, no registrado o expirado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/logout": {
+            "post": {
+                "tags": ["Auth"],
+                "summary": "Cerrar sesión",
+                "description": "Elimina de la base de datos el refresh token proporcionado. No requiere access token.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RefreshRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Sesión cerrada.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Sesión cerrada"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/mascotas": {
+            "get": {
+                "tags": ["Mascotas"],
+                "summary": "Listar todas las mascotas",
+                "description": "Devuelve todos los documentos de la colección de mascotas. No requiere autenticación en el código actual.",
+                "responses": {
+                    "200": {
+                        "description": "Lista de mascotas.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Mascota"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Mascotas"],
+                "summary": "Crear una mascota",
+                "description": "Crea un documento de mascota. Requiere un access token JWT válido.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MascotaInput"
+                            },
+                            "example": {
+                                "nombreDueño": "Ana",
+                                "nombre": "Toby",
+                                "edad": 3,
+                                "especie": "perro"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Resultado de MongoDB al insertar la mascota.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InsertResult"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "El cuerpo no es JSON.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token de acceso expirado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Falta el token o no es válido.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Límite global de peticiones superado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/mascotas/{id}": {
+            "parameters": [
+                {
+                    "name": "id",
+                    "in": "path",
+                    "required": true,
+                    "description": "Identificador de MongoDB (ObjectId).",
+                    "schema": {
+                        "type": "string",
+                        "example": "65f1a2b3c4d5e6f789012345"
+                    }
+                }
+            ],
+            "get": {
+                "tags": ["Mascotas"],
+                "summary": "Obtener una mascota por ID",
+                "description": "Busca una mascota por su ObjectId. Devuelve un array con el resultado según la implementación actual.",
+                "responses": {
+                    "200": {
+                        "description": "Resultado de la búsqueda.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Mascota"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ID no válido.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Límite global de peticiones superado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": ["Mascotas"],
+                "summary": "Actualizar una mascota",
+                "description": "Actualiza los campos de una mascota. Requiere un access token JWT válido.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MascotaInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Resultado de MongoDB al actualizar la mascota.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UpdateResult"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ID no válido o el cuerpo no es JSON.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token de acceso expirado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Falta el token o no es válido.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Límite global de peticiones superado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Mascotas"],
+                "summary": "Eliminar una mascota",
+                "description": "Elimina una mascota por su ObjectId. Requiere un access token JWT válido.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Resultado de MongoDB al eliminar la mascota.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeleteResult"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ID no válido.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token de acceso expirado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Falta el token o no es válido.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Límite global de peticiones superado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Introduce el accessToken obtenido en /api/login. El token de acceso caduca en 5 minutos."
+            }
+        },
+        "schemas": {
+            "LoginRequest": {
+                "type": "object",
+                "required": ["nombre", "contraseña"],
+                "properties": {
+                    "nombre": {
+                        "type": "string",
+                        "example": "ana"
+                    },
+                    "contraseña": {
+                        "type": "string",
+                        "format": "password",
+                        "example": "ejemplo123"
+                    }
+                }
+            },
+            "RefreshRequest": {
+                "type": "object",
+                "required": ["refreshToken"],
+                "properties": {
+                    "refreshToken": {
+                        "type": "string",
+                        "description": "Refresh token emitido por /api/login o /api/refresh."
+                    }
+                }
+            },
+            "Tokens": {
+                "type": "object",
+                "required": ["accessToken", "refreshToken"],
+                "properties": {
+                    "accessToken": {
+                        "type": "string",
+                        "description": "JWT de acceso con una duración de 5 minutos."
+                    },
+                    "refreshToken": {
+                        "type": "string",
+                        "description": "JWT de renovación con una duración de 7 días."
+                    }
+                }
+            },
+            "MascotaInput": {
+                "type": "object",
+                "properties": {
+                    "nombreDueño": {
+                        "type": "string",
+                        "example": "Ana"
+                    },
+                    "nombre": {
+                        "type": "string",
+                        "example": "Toby"
+                    },
+                    "edad": {
+                        "type": "integer",
+                        "example": 3
+                    },
+                    "especie": {
+                        "type": "string",
+                        "example": "perro"
+                    }
+                }
+            },
+            "Mascota": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/MascotaInput"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "_id": {
+                                "type": "string",
+                                "description": "ObjectId de MongoDB.",
+                                "example": "65f1a2b3c4d5e6f789012345"
+                            }
+                        }
+                    }
+                ]
+            },
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "example": "Id no válido"
+                    }
+                }
+            },
+            "InsertResult": {
+                "type": "object",
+                "description": "Resultado de insertOne de MongoDB.",
+                "properties": {
+                    "acknowledged": {
+                        "type": "boolean"
+                    },
+                    "insertedId": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UpdateResult": {
+                "type": "object",
+                "description": "Resultado de updateOne de MongoDB.",
+                "properties": {
+                    "acknowledged": {
+                        "type": "boolean"
+                    },
+                    "matchedCount": {
+                        "type": "integer"
+                    },
+                    "modifiedCount": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "DeleteResult": {
+                "type": "object",
+                "description": "Resultado de deleteOne de MongoDB.",
+                "properties": {
+                    "acknowledged": {
+                        "type": "boolean"
+                    },
+                    "deletedCount": {
+                        "type": "integer"
+                    }
+                }
+            }
+        }
+    }
+}
