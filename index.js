@@ -29,14 +29,23 @@ app.use(express.json());
 app.use(cors());
 
 // ---------- MongoDB ----------
+// No conectamos durante el arranque de la aplicación.
+// La conexión se establece cuando una ruta necesita la base de datos.
 
 const client = new MongoClient(DB_URL);
-await client.connect();
+let connectionPromise;
 
-await client
-    .db(DB_NAME)
-    .collection(TOKENS)
-    .createIndex({ createdAt: 1 }, { expireAfterSeconds: REFRESH_SECONDS });
+async function getDb() {
+    if (!connectionPromise) {
+        connectionPromise = client.connect().catch((error) => {
+            connectionPromise = undefined;
+            throw error;
+        });
+    }
+
+    await connectionPromise;
+    return client.db(DB_NAME);
+}
 
 // ---------- Limitación de peticiones ----------
 
@@ -65,10 +74,28 @@ app.use("/api/login", loginLimiter);
 
 // ---------- Swagger ----------
 
+app.get("/openapi.json", (request, response) => {
+    response.json(swaggerDocument);
+});
+
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.get("/", (request, response) => {
-    response.redirect("/api-docs");
+    response.redirect("/api-docs/");
+});
+
+// ---------- Manejo de errores de rutas asíncronas ----------
+
+app.use((error, request, response, next) => {
+    console.error("Error en la API:", error);
+
+    if (response.headersSent) {
+        return next(error);
+    }
+
+    response.status(500).json({
+        message: "Error interno del servidor",
+    });
 });
 
 // ---------- Autenticación JWT ----------
@@ -102,8 +129,8 @@ function verifyToken(request, response, next) {
     try {
         request.user = jwt.verify(token, SECRET_KEY);
         next();
-    } catch (err) {
-        const expirado = err.name === "TokenExpiredError";
+    } catch (error) {
+        const expirado = error.name === "TokenExpiredError";
 
         return response.status(expirado ? 401 : 403).json({
             message: expirado ? "Token expirado" : "Token inválido",
@@ -138,7 +165,7 @@ app.post("/api/login", async (request, response) => {
         });
     }
 
-    const db = client.db(DB_NAME);
+    const db = await getDb();
     const user = await db.collection(USERS).findOne({ nombre });
 
     if (!user) {
@@ -169,7 +196,7 @@ app.post("/api/login", async (request, response) => {
 // ---------- Renovar tokens ----------
 
 app.post("/api/refresh", async (request, response) => {
-    const { refreshToken } = request.body;
+    const { refreshToken } = request.body ?? {};
 
     if (!refreshToken) {
         return response.status(401).json({
@@ -177,10 +204,12 @@ app.post("/api/refresh", async (request, response) => {
         });
     }
 
-    const db = client.db(DB_NAME);
-    const guardado = await db
-        .collection(TOKENS)
-        .findOne({ token: refreshToken });
+    const db = await getDb();
+    const tokensCollection = db.collection(TOKENS);
+
+    const guardado = await tokensCollection.findOne({
+        token: refreshToken,
+    });
 
     if (!guardado) {
         return response.status(403).json({
@@ -191,16 +220,14 @@ app.post("/api/refresh", async (request, response) => {
     try {
         const payload = jwt.verify(refreshToken, REFRESH_SECRET);
 
-        await db.collection(TOKENS).deleteOne({
-            token: refreshToken,
-        });
+        await tokensCollection.deleteOne({ token: refreshToken });
 
         const tokens = generarTokens({
-            _id: payload.id,
+            _id: new ObjectId(payload.id),
             nombre: payload.nombre,
         });
 
-        await db.collection(TOKENS).insertOne({
+        await tokensCollection.insertOne({
             token: tokens.refreshToken,
             userId: new ObjectId(payload.id),
             createdAt: new Date(),
@@ -208,9 +235,7 @@ app.post("/api/refresh", async (request, response) => {
 
         response.json(tokens);
     } catch {
-        await db.collection(TOKENS).deleteOne({
-            token: refreshToken,
-        });
+        await tokensCollection.deleteOne({ token: refreshToken });
 
         response.status(403).json({
             message: "Refresh token expirado",
@@ -221,13 +246,14 @@ app.post("/api/refresh", async (request, response) => {
 // ---------- Logout ----------
 
 app.post("/api/logout", async (request, response) => {
-    const { refreshToken } = request.body;
+    const { refreshToken } = request.body ?? {};
 
     if (refreshToken) {
-        await client
-            .db(DB_NAME)
-            .collection(TOKENS)
-            .deleteOne({ token: refreshToken });
+        const db = await getDb();
+
+        await db.collection(TOKENS).deleteOne({
+            token: refreshToken,
+        });
     }
 
     response.json({ message: "Sesión cerrada" });
@@ -237,8 +263,8 @@ app.post("/api/logout", async (request, response) => {
 
 // Listar mascotas
 app.get("/api/mascotas", async (request, response) => {
-    const collection = client.db(DB_NAME).collection(MASCOTAS);
-    const results = await collection.find({}).toArray();
+    const db = await getDb();
+    const results = await db.collection(MASCOTAS).find({}).toArray();
 
     response.status(200).json(results);
 });
@@ -251,7 +277,8 @@ app.post("/api/mascotas", verifyToken, async (request, response) => {
         });
     }
 
-    const collection = client.db(DB_NAME).collection(MASCOTAS);
+    const db = await getDb();
+    const collection = db.collection(MASCOTAS);
     const { nombreDueño, nombre, edad, especie } = request.body;
 
     const results = await collection.insertOne({
@@ -261,15 +288,18 @@ app.post("/api/mascotas", verifyToken, async (request, response) => {
         especie,
     });
 
-    response.status(200).json(results);
+    response.status(201).json(results);
 });
 
 // Obtener mascota por ID
 app.get("/api/mascotas/:id", validarId, async (request, response) => {
-    const collection = client.db(DB_NAME).collection(MASCOTAS);
+    const db = await getDb();
     const { id } = request.params;
 
-    const results = await collection.find({ _id: new ObjectId(id) }).toArray();
+    const results = await db
+        .collection(MASCOTAS)
+        .find({ _id: new ObjectId(id) })
+        .toArray();
 
     response.status(200).json(results);
 });
@@ -286,7 +316,8 @@ app.put(
             });
         }
 
-        const collection = client.db(DB_NAME).collection(MASCOTAS);
+        const db = await getDb();
+        const collection = db.collection(MASCOTAS);
         const { id } = request.params;
         const { nombreDueño, nombre, edad, especie } = request.body;
 
@@ -312,16 +343,49 @@ app.delete(
     verifyToken,
     validarId,
     async (request, response) => {
-        const collection = client.db(DB_NAME).collection(MASCOTAS);
+        const db = await getDb();
         const { id } = request.params;
 
-        const results = await collection.deleteOne({
-            _id: new ObjectId(id),
-        });
+        const results = await db
+            .collection(MASCOTAS)
+            .deleteOne({ _id: new ObjectId(id) });
 
         response.status(200).json(results);
     },
 );
+
+// ---------- Crear índice de caducidad ----------
+// Se ejecuta cuando MongoDB está disponible, sin bloquear Swagger.
+
+let indexPromise;
+
+async function ensureRefreshTokenIndex() {
+    if (!indexPromise) {
+        indexPromise = getDb()
+            .then((db) =>
+                db
+                    .collection(TOKENS)
+                    .createIndex(
+                        { createdAt: 1 },
+                        { expireAfterSeconds: REFRESH_SECONDS },
+                    ),
+            )
+            .catch((error) => {
+                indexPromise = undefined;
+                throw error;
+            });
+    }
+
+    return indexPromise;
+}
+
+// Intentar crear el índice sin impedir que arranque la API.
+ensureRefreshTokenIndex().catch((error) => {
+    console.error(
+        "No se pudo crear el índice de refresh tokens:",
+        error.message,
+    );
+});
 
 // ---------- Inicio del servidor ----------
 
