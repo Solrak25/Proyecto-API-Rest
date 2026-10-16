@@ -3,12 +3,15 @@ import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 
 const SECRET_KEY = process.env.JWT_SECRET ?? "secreto";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(globalLimiter);
+app.use("/api/login", loginLimiter);
 
 const PORT = process.env.PORT ?? 5000;
 const DB_URL = process.env.MONGODB_URI ?? "mongodb://localhost:27017";
@@ -62,6 +65,22 @@ app.post("/api/login", async (request, response) => {
     });
 
     response.json({ token });
+});
+
+// Rate limit
+
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    limit: 100, // 100 peticiones por IP en esa ventana
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Demasiadas peticiones, inténtalo más tarde" },
+});
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5, // 5 intentos de login cada 15 minutos
+    message: { message: "Demasiados intentos de login, espera 15 minutos" },
 });
 
 // EndPoints
