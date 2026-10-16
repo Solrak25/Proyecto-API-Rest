@@ -434,6 +434,8 @@ app.delete(
     },
 );
 
-app.listen(PORT, () =>
-    console.log(`Servidor web iniciado en puerto: ${PORT} (docs en /api/docs)`),
-);
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => console.log(`Servidor en puerto: ${PORT}`));
+}
+
+export default app;
