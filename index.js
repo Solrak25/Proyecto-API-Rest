@@ -29,23 +29,9 @@ app.use(express.json());
 app.use(cors());
 
 // ---------- MongoDB ----------
-// No conectamos durante el arranque de la aplicación.
-// La conexión se establece cuando una ruta necesita la base de datos.
 
 const client = new MongoClient(DB_URL);
-let connectionPromise;
-
-async function getDb() {
-    if (!connectionPromise) {
-        connectionPromise = client.connect().catch((error) => {
-            connectionPromise = undefined;
-            throw error;
-        });
-    }
-
-    await connectionPromise;
-    return client.db(DB_NAME);
-}
+const db = client.db(DB_NAME);
 
 // ---------- Limitación de peticiones ----------
 
@@ -74,36 +60,10 @@ app.use("/api/login", loginLimiter);
 
 // ---------- Swagger ----------
 
-app.get("/diagnostico", (request, response) => {
-    response.json({
-        mensaje: "Express funciona en Vercel",
-        swaggerCargado: Boolean(swaggerDocument),
-        titulo: swaggerDocument?.info?.title,
-    });
-});
-
-app.get("/openapi.json", (request, response) => {
-    response.json(swaggerDocument);
-});
-
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.get("/", (request, response) => {
     response.redirect("/api-docs/");
-});
-
-// ---------- Manejo de errores de rutas asíncronas ----------
-
-app.use((error, request, response, next) => {
-    console.error("Error en la API:", error);
-
-    if (response.headersSent) {
-        return next(error);
-    }
-
-    response.status(500).json({
-        message: "Error interno del servidor",
-    });
 });
 
 // ---------- Autenticación JWT ----------
@@ -146,16 +106,6 @@ function verifyToken(request, response, next) {
     }
 }
 
-function validarId(request, response, next) {
-    if (!ObjectId.isValid(request.params.id)) {
-        return response.status(400).json({
-            message: "Id no válido",
-        });
-    }
-
-    next();
-}
-
 // ---------- Login ----------
 
 app.post("/api/login", async (request, response) => {
@@ -173,7 +123,6 @@ app.post("/api/login", async (request, response) => {
         });
     }
 
-    const db = await getDb();
     const user = await db.collection(USERS).findOne({ nombre });
 
     if (!user) {
@@ -212,7 +161,6 @@ app.post("/api/refresh", async (request, response) => {
         });
     }
 
-    const db = await getDb();
     const tokensCollection = db.collection(TOKENS);
 
     const guardado = await tokensCollection.findOne({
@@ -257,8 +205,6 @@ app.post("/api/logout", async (request, response) => {
     const { refreshToken } = request.body ?? {};
 
     if (refreshToken) {
-        const db = await getDb();
-
         await db.collection(TOKENS).deleteOne({
             token: refreshToken,
         });
@@ -271,7 +217,6 @@ app.post("/api/logout", async (request, response) => {
 
 // Listar mascotas
 app.get("/api/mascotas", async (request, response) => {
-    const db = await getDb();
     const results = await db.collection(MASCOTAS).find({}).toArray();
 
     response.status(200).json(results);
@@ -285,11 +230,9 @@ app.post("/api/mascotas", verifyToken, async (request, response) => {
         });
     }
 
-    const db = await getDb();
-    const collection = db.collection(MASCOTAS);
     const { nombreDueño, nombre, edad, especie } = request.body;
 
-    const results = await collection.insertOne({
+    const results = await db.collection(MASCOTAS).insertOne({
         nombreDueño,
         nombre,
         edad,
@@ -300,8 +243,7 @@ app.post("/api/mascotas", verifyToken, async (request, response) => {
 });
 
 // Obtener mascota por ID
-app.get("/api/mascotas/:id", validarId, async (request, response) => {
-    const db = await getDb();
+app.get("/api/mascotas/:id", async (request, response) => {
     const { id } = request.params;
 
     const results = await db
@@ -313,94 +255,57 @@ app.get("/api/mascotas/:id", validarId, async (request, response) => {
 });
 
 // Actualizar mascota (requiere JWT)
-app.put(
-    "/api/mascotas/:id",
-    verifyToken,
-    validarId,
-    async (request, response) => {
-        if (!request.is("json")) {
-            return response.status(400).json({
-                message: "Debes proporcionar datos JSON",
-            });
-        }
-
-        const db = await getDb();
-        const collection = db.collection(MASCOTAS);
-        const { id } = request.params;
-        const { nombreDueño, nombre, edad, especie } = request.body;
-
-        const results = await collection.updateOne(
-            { _id: new ObjectId(id) },
-            {
-                $set: {
-                    nombreDueño,
-                    nombre,
-                    edad,
-                    especie,
-                },
-            },
-        );
-
-        response.status(200).json(results);
-    },
-);
-
-// Eliminar mascota (requiere JWT)
-app.delete(
-    "/api/mascotas/:id",
-    verifyToken,
-    validarId,
-    async (request, response) => {
-        const db = await getDb();
-        const { id } = request.params;
-
-        const results = await db
-            .collection(MASCOTAS)
-            .deleteOne({ _id: new ObjectId(id) });
-
-        response.status(200).json(results);
-    },
-);
-
-// ---------- Crear índice de caducidad ----------
-// Se ejecuta cuando MongoDB está disponible, sin bloquear Swagger.
-
-let indexPromise;
-
-async function ensureRefreshTokenIndex() {
-    if (!indexPromise) {
-        indexPromise = getDb()
-            .then((db) =>
-                db
-                    .collection(TOKENS)
-                    .createIndex(
-                        { createdAt: 1 },
-                        { expireAfterSeconds: REFRESH_SECONDS },
-                    ),
-            )
-            .catch((error) => {
-                indexPromise = undefined;
-                throw error;
-            });
+app.put("/api/mascotas/:id", verifyToken, async (request, response) => {
+    if (!request.is("json")) {
+        return response.status(400).json({
+            message: "Debes proporcionar datos JSON",
+        });
     }
 
-    return indexPromise;
-}
+    const { id } = request.params;
+    const { nombreDueño, nombre, edad, especie } = request.body;
 
-// Intentar crear el índice sin impedir que arranque la API.
-ensureRefreshTokenIndex().catch((error) => {
-    console.error(
-        "No se pudo crear el índice de refresh tokens:",
-        error.message,
+    const results = await db.collection(MASCOTAS).updateOne(
+        { _id: new ObjectId(id) },
+        {
+            $set: {
+                nombreDueño,
+                nombre,
+                edad,
+                especie,
+            },
+        },
     );
+
+    response.status(200).json(results);
 });
+
+// Eliminar mascota (requiere JWT)
+app.delete("/api/mascotas/:id", verifyToken, async (request, response) => {
+    const { id } = request.params;
+
+    const results = await db
+        .collection(MASCOTAS)
+        .deleteOne({ _id: new ObjectId(id) });
+
+    response.status(200).json(results);
+});
+
+// ---------- Crear índice de caducidad ----------
+
+db.collection(TOKENS)
+    .createIndex({ createdAt: 1 }, { expireAfterSeconds: REFRESH_SECONDS })
+    .catch((error) => {
+        console.error(
+            "No se pudo crear el índice de refresh tokens:",
+            error.message,
+        );
+    });
 
 // ---------- Inicio del servidor ----------
 
-if (!process.env.VERCEL) {
-    app.listen(PORT, () => {
-        console.log(`Servidor en puerto: ${PORT}`);
-    });
-}
+app.listen(PORT, () => {
+    console.log(`Servidor en puerto: ${PORT}`);
+});
 
 export default app;
