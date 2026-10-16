@@ -7,6 +7,10 @@
     },
     "servers": [
         {
+            "url": "https://proyecto-api-rest-hgziy7mem-solrak25s-projects.vercel.app",
+            "description": "API desplegada en Vercel"
+        },
+        {
             "url": "http://localhost:5000",
             "description": "Servidor local"
         }
