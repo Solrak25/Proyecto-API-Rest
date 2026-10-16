@@ -74,6 +74,14 @@ app.use("/api/login", loginLimiter);
 
 // ---------- Swagger ----------
 
+app.get("/diagnostico", (request, response) => {
+    response.json({
+        mensaje: "Express funciona en Vercel",
+        swaggerCargado: Boolean(swaggerDocument),
+        titulo: swaggerDocument?.info?.title,
+    });
+});
+
 app.get("/openapi.json", (request, response) => {
     response.json(swaggerDocument);
 });
