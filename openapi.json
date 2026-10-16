@@ -7,7 +7,7 @@
     },
     "servers": [
         {
-            "url": "https://proyecto-api-rest-hgziy7mem-solrak25s-projects.vercel.app",
+            "url": "https://proyecto-api-rest-nine.vercel.app",
             "description": "API desplegada en Vercel"
         },
         {
