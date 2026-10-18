@@ -190,11 +190,12 @@ app.post("/api/refresh", async (request, response) => {
         });
 
         response.json(tokens);
-    } catch {
+    } catch (error) {
+        console.error("Error en refresh:", error);
         await tokensCollection.deleteOne({ token: refreshToken });
 
         response.status(403).json({
-            message: "Refresh token expirado",
+            message: "Refresh token inválido o expirado",
         });
     }
 });
