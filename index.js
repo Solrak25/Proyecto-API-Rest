@@ -37,7 +37,7 @@ const db = client.db(DB_NAME);
 
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 100,
+    limit: 1000,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -47,7 +47,7 @@ const globalLimiter = rateLimit({
 
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 5,
+    limit: 50,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -141,7 +141,11 @@ app.post("/api/login", async (request, response) => {
 
     const { accessToken, refreshToken } = generarTokens(user);
 
-    await db.collection(TOKENS).insertOne({
+    const tokensCollection = db.collection(TOKENS);
+
+    await tokensCollection.deleteMany({ userId: user._id });
+
+    await tokensCollection.insertOne({
         token: refreshToken,
         userId: user._id,
         createdAt: new Date(),
